@@ -2,7 +2,7 @@ from setuptools import find_namespace_packages, setup
 
 setup(
     name="spiir-io",
-    version="0.0.1",
+    version="0.0.2",
     packages=find_namespace_packages(include=["spiir.*"]),
     python_requires=">=3.8",
     install_requires=[
