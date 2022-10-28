@@ -1,6 +1,5 @@
 import concurrent.futures
 import logging
-import sndhdr
 from functools import partial
 from os import PathLike
 from typing import Dict, Optional, Sequence, Union
