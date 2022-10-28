@@ -1,9 +1,9 @@
-from setuptools import find_packages, setup
+from setuptools import find_namespace_packages, setup
 
 setup(
-    name="spiir.workflow",
+    name="spiir-data",
     version="0.0.1",
-    packages=find_packages(),
+    packages=find_namespace_packages(include=["spiir.*"]),
     python_requires=">=3.8",
     install_requires=[
         "wheel",
@@ -11,15 +11,12 @@ setup(
         "lalsuite",
         "astropy",
         "python-ligo-lw>=1.8.1",
-        "ligo.skymap",
         "numpy",
         "scipy",
         "pandas",
-        "matplotlib",
-        "click",
-        "spiir.io",
     ],
-    description="A library for common R&D workflows used by the SPIIR search pipeline.",
+    extras_require={"pycbc": ["pycbc"]},
+    description="A data processing library for the SPIIR search pipeline.",
     author="Daniel Tang",
     author_email="daniel.tang@uwa.edu.au",
     zip_safe=False,

@@ -1,9 +1,9 @@
-from setuptools import find_packages, setup
+from setuptools import find_namespace_packages, setup
 
 setup(
-    name="spiir.data",
+    name="spiir-search",
     version="0.0.1",
-    packages=find_packages(where="src", include=["spiir.*"]),
+    packages=find_namespace_packages(include=["spiir.*"]),
     python_requires=">=3.8",
     install_requires=[
         "wheel",
@@ -14,9 +14,11 @@ setup(
         "numpy",
         "scipy",
         "pandas",
+        "matplotlib",
+        "click",
+        "pycbc",  # refactor p_astro to make pycbc an optional dependency
     ],
-    extras_require={"pycbc": ["pycbc"]},
-    description="A data processing library for the SPIIR search pipeline.",
+    description="Search algorithms and functions core to the SPIIR search pipeline.",
     author="Daniel Tang",
     author_email="daniel.tang@uwa.edu.au",
     zip_safe=False,
