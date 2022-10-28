@@ -22,11 +22,7 @@ setup(
         "matplotlib",
         "click",
     ],
-    extras_require={
-        "tensorflow": ["tensorflow>=2.8", "tensorflow-probability", "scikit-learn"],
-        "torch": ["torch", "torchaudio", "scikit-learn"],
-        "pycbc": ["pycbc"],
-    },
+    extras_require={"pycbc": ["pycbc"]},
     description="A Python library for the SPIIR gravitational wave science pipeline.",
     author="Daniel Tang",
     author_email="daniel.tang@uwa.edu.au",
