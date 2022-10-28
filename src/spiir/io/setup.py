@@ -20,4 +20,5 @@ setup(
     description="A utilities and IO tooling library for the SPIIR search pipeline.",
     author="Daniel Tang",
     author_email="daniel.tang@uwa.edu.au",
+    zip_safe=False,
 )

@@ -22,4 +22,5 @@ setup(
     description="A library for common R&D workflows used by the SPIIR search pipeline.",
     author="Daniel Tang",
     author_email="daniel.tang@uwa.edu.au",
+    zip_safe=False,
 )
