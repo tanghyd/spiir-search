@@ -13,14 +13,27 @@ https://github.com/veronica-villa/source_probabilities_estimation_pycbclive
 """
 import json
 import logging
+import pickle
 from pathlib import Path
-from typing import Optional, Union, Tuple
+from typing import Optional, Tuple, Union
 
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from pycbc.mchirp_area import calc_areas, redshift_estimation, src_mass_from_z_det_mass
+from pycbc.conversions import mass2_from_mchirp_mass1 as mcm1_to_m2
+from pycbc.mchirp_area import (calc_areas, redshift_estimation,
+                               src_mass_from_z_det_mass)
+
+SOURCE_COLOR_MAP = {
+    "BNS": "#A2C8F5",  # light blue
+    "NSBH": "#FFB482",  # light orange
+    "BBH": "#FE9F9B",  # light red
+    "MG": "#8EE5A1",  # light green
+    "MGNS": "#98D6CB",  # turquoise
+    "MGMG": "#79BB87",  # green
+    "BHMG": "#C6C29E",  # dark khaki
+}
 
 
 class ChirpMassAreaModel:
@@ -31,13 +44,13 @@ class ChirpMassAreaModel:
         b1: Optional[float] = None,
         m0: Optional[float] = None,
         mass_bounds: Tuple[float, float] = (1.0, 45.0),
-        ns_max: float = 3.0, 
+        ns_max: float = 3.0,
         mass_gap_max: Optional[float] = None,
         separate_mass_gap: bool = False,
         lal_cosmology: bool = True,
         distance_lower_bound: float = 0,
     ):
-        """Defines a Compact Binary Coalescence source classifier class based on the 
+        """Defines a Compact Binary Coalescence source classifier class based on the
         PyCBC Chirp Mass Area method (mchirp_area.py) by Villa-Ortega et. al. (2021).
 
         Parameters
@@ -63,12 +76,12 @@ class ChirpMassAreaModel:
             If True, it uses the Planck15 cosmology model as defined in
              lalsuite instead of the astropy default.
         distance_lower_bound: float
-            If provided, the ceiling of the distance_lower_bound and the estimated 
+            If provided, the ceiling of the distance_lower_bound and the estimated
             lower uncertainty bound will be selected for distance estimation.
         """
         # model coefficients
         self.a0, self.b0, self.b1, self.m0 = a0, b0, b1, m0
-        
+
         # specify component mass value boundaries
         self.mass_bounds = mass_bounds  # component mass bounds for integration
         self.separate_mass_gap = separate_mass_gap
@@ -113,7 +126,8 @@ class ChirpMassAreaModel:
         eff_distance: float,
         snr: float,
     ) -> float:
-        for coeff in ("a0", "b0", "b1"): self.check_initialised(coeff)
+        for coeff in ("a0", "b0", "b1"):
+            self.check_initialised(coeff)
 
         return (
             np.power(snr, self.b0)
@@ -134,11 +148,13 @@ class ChirpMassAreaModel:
         mchirp: float,
         z: float,
         z_std: float,
-        ) -> Dict[str, float]:
+    ) -> Dict[str, float]:
         """Computes the astrophysical source probability of a given candidate event."""
 
         # determine chirp mass bounds in detector frame for classification
-        get_redshifted_mchirp = lambda m: (m / (2**0.2)) * (1 + z)  # Mc_det = (1+z)*Mc
+        get_redshifted_mchirp = lambda m: (m / (2**0.2)) * (
+            1 + z
+        )  # Mc_det = (1+z)*Mc
         mchirp_min, mchirp_max = (get_redshifted_mchirp(m) for m in mass_bounds)
 
         # determine astrophysical source class probabilities given estimated parameters
@@ -237,7 +253,7 @@ class ChirpMassAreaModel:
         return self
 
     def predict(
-        self,s
+        self,
         snr: float,
         eff_distance: float,
     ) -> Dict[str, float]:
@@ -267,26 +283,29 @@ class ChirpMassAreaModel:
 
     def plot(
         self,
-        mchirp: float,
-        mchirp_std: float,
-        z: float,
-        z_std: float,
+        self,
+        snr: float,
+        eff_distance: float,
         ax: Optional[Axes] = None,
-        figsize = Tuple[float, float]
-        *args,
+        figsize=Tuple[float, float] * args,
         **kwargs,
-    ) -> Figure:
-        """Draws the proportional chirp mass area plane according to the model."""
+    ) -> Axes:
+        """Draws the estimated proportional chirp mass area plane with the detector
+        frame trigger data as input to the model."""
+        # TODO: Implement a more efficient solution when we want to predict + plot.
 
-        return draw_mchirp_area_plane(
+        # estimate source frame chirp mass from trigger data
+        distance, distance_std = self.estimate_distance(eff_distance)
+        z, z_std = self.estimate_redshift(distance, distance_std, self.lal_cosmology)
+        m_src, m_src_std = src_mass_from_z_det_mass(mchirp, mchirp_std, z, z_std)
+
+        return draw_mass_contour_plane(
+            m_src_lower=m_src - m_src_std,
+            m_src_upper=m_src + m_src_std,
+            mass_bounds=self.mass_bounds,
+            ns_max=self.ns_max,
+            mass_gap_max=self.mass_gap_max,
             ax=ax or plt.gca(),  # use the provided matplotlib axes, else create one
-            mchirp=mchirp,
-            mchirp_std=mchirp_std,
-            z=z,
-            z_std=z_std,
-            self.mass_bounds=self.mass_bounds,
-            self.ns_max=self.ns_max,
-            self.mass_gap_max=self.mass_gap_max,
             *args,
             **kwargs,
         )
@@ -316,26 +335,26 @@ class ChirpMassAreaModel:
             self.check_initialised(coeff, raise_error=False)
 
 
-def draw_mchirp_area_plane(
+def draw_mass_contour_plane(
     ax: Axes,
-    mchirp: float,
-    mchirp_std: float,
-    z: float,
-    z_std: float,
+    mchirp_lower: float,
+    mchirp_upper: float,
     mass_bounds: Tuple[float, float],
     ns_max: float = 3.0,
     mass_gap_max: Optional[float] = None,
+    xlims: Optional[Tuple[float, float]] = None,
+    ylims: Optional[Tuple[float, float]] = None,
     *args,
-    **kwargs
+    **kwargs,
 ) -> Axes:
-    """Draws a matplotlib Axes visualising the proportional chirp mass area plane."""
+    """Draws a matplotlib Axes visualising the proportional chirp mass area plane.
 
-    # estimate source frame chirp mass and uncertainty boundary
-    mc, mc_std = src_mass_from_z_det_mass(mchirp, mchirp_std, z, z_std)
-    mcb = mc + mc_std
-    mcs = mc - mc_std
-
+    Source: Veronica Villa-Ortega, March 2021
+    - https://github.com/veronica-villa/source_probabilities_estimation_pycbclive
+        /blob/f2656b4762a232d4758db88569e0b7ab45756ead/mc_area_plots.py
+    """
     # determine component masses (when m1 = m2) given chirp mass boundaries
+    mcb, mcs = mchirp_lower, mchirp_upper
     mib = (2.0**0.2) * mcb
     mis = (2.0**0.2) * mcs
 
@@ -377,39 +396,39 @@ def draw_mchirp_area_plane(
         np.arange(0.0, ns_max - 0.01, 0.01),
         mass_gap_max,
         m1_max,
-        color=get_source_colour("NSBH"),
+        color=SOURCE_COLOR_MAP("NSBH"),
         alpha=0.5,
     )
     ax.fill_between(
         np.arange(mass_gap_max, m1_max, 0.01),
         0.0,
         ns_max,
-        color=get_source_colour("NSBH"),
+        color=SOURCE_COLOR_MAP("NSBH"),
     )
     ax.fill_between(
         np.arange(mass_gap_max, m1_max, 0.01),
         np.arange(mass_gap_max, m1_max, 0.01),
         m1_max,
-        color=get_source_colour("BBH"),
+        color=SOURCE_COLOR_MAP("BBH"),
         alpha=0.5,
     )
     ax.fill_between(
         np.arange(mass_gap_max, m1_max, 0.01),
         np.arange(mass_gap_max, m1_max, 0.01),
         mass_gap_max,
-        color=get_source_colour("BBH"),
+        color=SOURCE_COLOR_MAP("BBH"),
     )
     ax.fill_between(
         np.arange(0.0, ns_max, 0.01),
         0.0,
         np.arange(0.0, ns_max, 0.01),
-        color=get_source_colour("BNS"),
+        color=SOURCE_COLOR_MAP("BNS"),
     )
     ax.fill_between(
         np.arange(0.0, ns_max, 0.01),
         ns_max,
         np.arange(0.0, ns_max, 0.01),
-        color=get_source_colour("BNS"),
+        color=SOURCE_COLOR_MAP("BNS"),
         alpha=0.5,
     )
 
@@ -418,26 +437,26 @@ def draw_mchirp_area_plane(
             np.arange(0.0, ns_max, 0.01),
             ns_max,
             mass_gap_max,
-            color=get_source_colour("MG"),
+            color=SOURCE_COLOR_MAP("MG"),
             alpha=0.5,
         )
         ax.fill_between(
             np.arange(ns_max, mass_gap_max, 0.01),
             np.arange(ns_max, mass_gap_max, 0.01),
             m1_max,
-            color=get_source_colour("MG"),
+            color=SOURCE_COLOR_MAP("MG"),
             alpha=0.5,
         )
         ax.fill_between(
             np.arange(ns_max, mass_gap_max, 0.01),
             np.arange(ns_max, mass_gap_max, 0.01),
-            color=get_source_colour("MG"),
+            color=SOURCE_COLOR_MAP("MG"),
         )
         ax.fill_between(
             np.arange(mass_gap_max, m1_max, 0.01),
             ns_max,
             mass_gap_max,
-            color=get_source_colour("MG"),
+            color=SOURCE_COLOR_MAP("MG"),
         )
 
     # colour contour
@@ -469,3 +488,5 @@ def draw_mchirp_area_plane(
     ax.set(xlim=xlims, ylim=ylims, xlabel=r"$m_1$", ylabel=r"$m_2$")
 
     return ax
+
+    xlims

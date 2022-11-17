@@ -6,13 +6,13 @@ Code sourced from https://git.ligo.org/lscsoft/p-astro/-/tree/master/ligo.
 import logging
 import pickle
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Union
 
 import numpy as np
-from ligo.p_astro import SourceType, MarginalizedPosterior
-from ligo.p_astro.computation import (
-    p_astro_update, evaluate_p_astro_from_bayesfac, choose_snr, get_f_over_b
-)
+from ligo.p_astro import MarginalizedPosterior, SourceType
+from ligo.p_astro.computation import (choose_snr,
+                                      evaluate_p_astro_from_bayesfac,
+                                      get_f_over_b, p_astro_update)
 
 from .mchirp_area import ChirpMassAreaModel
 
@@ -57,6 +57,7 @@ class TwoComponentModel:
         bayes_factors = get_f_over_b(far, snr, self.far_threshold, self.snr_threshold)
         assert len(bayes_factors.shape) == 1, "bayes_factors should be a 1-dim array."
 
+        # construct two component posterior for signal vs. noise
         astro = SourceType(label="Astro", w_fgmc=np.ones(len(bayes_factors)))
         terr = SourceType(label="Terr", w_fgmc=np.ones(len(bayes_factors)))
         self.marginalized_posterior = MarginalizedPosterior(
@@ -66,9 +67,7 @@ class TwoComponentModel:
             **{"Astro": astro},
         )
 
-        # idx = bayes_factors >= min(bayes_factors)
-        # p_astro_values = marginalized_posterior.pastro(categories=["Astro"], trigger_idx=idx)
-
+        # update expected mean counts given observed data
         self.mean_counts = {
             key: self.marginalized_posterior.getOneDimMean(category=key)
             for key in ("Astro", "Terr")
@@ -79,7 +78,7 @@ class TwoComponentModel:
     def predict(
         self, far: Union[float, np.ndarray], snr: Union[float, np.ndarray]
     ) -> Union[float, np.ndarray]:
-        bayes_factors = get_f_over_b(far, snr, self.far_threshold, snr_threshold)
+        bayes_factors = get_f_over_b(far, snr, self.far_threshold, self.snr_threshold)
         return self.marginalized_posterior.pastro_update(
             categories=["Astro"],
             bayesfac_dict={"Astro": bayes_factors},
@@ -112,7 +111,7 @@ class CompositeModel:
         self.signal_model.load(signal_config)
         self.source_model.load(source_config)
 
-    def predict(    
+    def predict(
         self,
         far: float,
         snr: float,
