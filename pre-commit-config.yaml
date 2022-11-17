@@ -1,0 +1,26 @@
+---
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.1.0
+    hooks:
+      - id: check-merge-conflict  # checks for files that contain merge conflict strings
+      - id: check-yaml  # checks yaml files for parseable syntax
+      - id: end-of-file-fixer  # ensures that files are empty or end with 1 newline.
+      - id: trailing-whitespace  # trims trailing whitespace.
+  - repo: https://github.com/python/black.git
+    rev: 19.10b0
+    hooks:
+      - id: black
+        language_version: python3
+  - repo: https://gitlab.com/pycqa/flake8.git
+    rev: 3.7.9
+    hooks:
+      - id: flake8
+        additional_dependencies:
+          - flake8-black>=0.1.1
+        language_version: python3
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.10.1
+    hooks:
+      - id: isort
+        args: [--profile=black]
