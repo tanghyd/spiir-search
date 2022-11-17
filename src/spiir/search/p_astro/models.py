@@ -14,32 +14,12 @@ from ligo.p_astro.computation import (
     p_astro_update, evaluate_p_astro_from_bayesfac, choose_snr, get_f_over_b
 )
 
+from .mchirp_area import ChirpMassAreaModel
+
 logger = logging.getLogger(__name__)
 
-class CompositeModel:
-    def __init__(
-        self,
-        fgmc_model: FGMCTwoComponentModel,
-        mchirp_area_model: mchirp_area.ChirpMassAreaModel,
-    ):
-        # to do: intiailise from config file(?)
-        self.fgmc_model = fgmc_model
-        self.mchirp_area_model = mchirp_area_model
 
-    def predict(    
-        self,
-        far: float,
-        snr: float,
-        mchirp: float,
-        eff_dist: float,
-    ):
-        astro_prob = self.fgmc_model.predict(far, snr)
-        source_probs = self.mchirp_area_model.predict(mchirp, snr, eff_dist)
-        probs = {key: source_probs[key] * astro_prob for key in source_probs}
-        probs.update({"Terrestrial": 1 - astro_prob})
-        return probs
-
-class FGMCTwoComponentModel:
+class TwoComponentModel:
     def __init__(
         self,
         far_threshold: float = 3e-4,
@@ -113,3 +93,34 @@ class FGMCTwoComponentModel:
     def load_pkl(self, path: Union[str, Path]):
         with Path(path).open(mode="rb") as f:
             self.__dict__ = pickle.load(f)
+
+
+class CompositeModel:
+    def __init__(
+        self,
+        signal_model: TwoComponentModel,
+        source_model: ChirpMassAreaModel,
+    ):
+        self.signal_model = signal_model
+        self.source_model = source_model
+
+    def load(
+        self,
+        signal_config: str,
+        source_config: str,
+    ):
+        self.signal_model.load(signal_config)
+        self.source_model.load(source_config)
+
+    def predict(    
+        self,
+        far: float,
+        snr: float,
+        mchirp: float,
+        eff_dist: float,
+    ) -> Dict[str, float]:
+        astro_prob = self.signal_model.predict(far, snr)
+        source_probs = self.source_model.predict(mchirp, snr, eff_dist)
+        probs = {key: source_probs[key] * astro_prob for key in source_probs}
+        probs.update({"Terrestrial": 1 - astro_prob})
+        return probs

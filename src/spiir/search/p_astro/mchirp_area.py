@@ -1,25 +1,27 @@
+"""Module for source probability estimation and and plotting for the "mchirp_area" 
+method as proposed by Villa-Ortega et. al. (2020).
+
+Initial code by A. Curiel Barroso, August 2019
+Modified by V. Villa-Ortega, January 2020, March 2021
+Modified by Daniel Tang for SPIIR March 2022
+
+Code forked from PyCBC for SPIIR development (March 2022)
+Source: https://github.com/gwastro/pycbc/blob/master/pycbc/mchirp_area.py
+Additional edits drawn from prior work done by V. Villa-Ortega:
+https://github.com/veronica-villa/source_probabilities_estimation_pycbclive
+
+"""
+import json
 import logging
 from pathlib import Path
 from typing import Optional, Union, Tuple
 
 import numpy as np
+from matplotlib import pyplot as plt
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+from pycbc.mchirp_area import calc_areas, redshift_estimation, src_mass_from_z_det_mass
 
-# estimate_source_mass
-# get_area
-# calc_areas
-# predict_redshift
-# calc_probabilities
-# predict_source_p_astro
-# plot_mchirp_area_figure
-# _draw_mchirp_area_axes
-
-from pycbc.mchirp_area import calc_areas, get_area
-
-def calculate_probabilities():
-    pass
-
-def estimate_redshift():
-    pass
 
 class ChirpMassAreaModel:
     def __init__(
@@ -33,9 +35,10 @@ class ChirpMassAreaModel:
         mass_gap_max: Optional[float] = None,
         separate_mass_gap: bool = False,
         lal_cosmology: bool = True,
+        distance_lower_bound: float = 0,
     ):
-        """Defines class-based Compact Binary Coalescence source classifier based on
-        the PyCBC Chirp Mass Area method by Villa-Ortega et. al. (2021).
+        """Defines a Compact Binary Coalescence source classifier class based on the 
+        PyCBC Chirp Mass Area method (mchirp_area.py) by Villa-Ortega et. al. (2021).
 
         Parameters
         ----------
@@ -43,9 +46,9 @@ class ChirpMassAreaModel:
             Model parameter used as the coefficient to estimate BAYESTAR distance from
             the minimum effective distance of a given single instrument event trigger.
         b0: float | None
-            Model parameter used to estimate distance uncertainty?
+            Model parameter used to estimate luminosity distance uncertainty.
         b1: float | None
-            Model parameter used to estimate distance uncertainty?
+            Model parameter used to estimate luminosity distance uncertainty.
         m0: float | None
             Inherent percentage uncertainty in chirp mass, set to 1% (0.01) by default.
         mass_bounds: tuple[float, float]
@@ -57,29 +60,24 @@ class ChirpMassAreaModel:
         separate_mass_gap: bool
             If True, splits Mass Gap into BH+Gap, Gap+NS, and Gap+Gap.
         lal_cosmology: bool
-            If True, it uses the Planck15 cosmology model
-            as defined in lalsuite instead of the astropy default.
-
-        Returns
-        -------
-        dict[str, float]
-            A dictionary of probabilities predicted for each CBC source class.
+            If True, it uses the Planck15 cosmology model as defined in
+             lalsuite instead of the astropy default.
+        distance_lower_bound: float
+            If provided, the ceiling of the distance_lower_bound and the estimated 
+            lower uncertainty bound will be selected for distance estimation.
         """
-
-        self.a0 = a0
-        self.b0 = b0
-        self.b1 = b1
-
-        self.m0 = m0  # inherent relative uncertainty in chirp mass
-
+        # model coefficients
+        self.a0, self.b0, self.b1, self.m0 = a0, b0, b1, m0
+        
         # specify component mass value boundaries
         self.mass_bounds = mass_bounds  # component mass bounds for integration
+        self.separate_mass_gap = separate_mass_gap
+        self.mass_gap_max = mass_gap_max  # if None, no mass_gap classes used
         self.ns_max = ns_max
-        self.mass_gap_max = mass_gap_max  # if None, no mass_gap class provided
         assert 0 < ns_max <= (self.mass_gap_max or ns_max)
 
-        self.separate_mass_gap = separate_mass_gap
         self.lal_cosmology = lal_cosmology
+        # self.distance_lower_bound = distance_lower_bound  # not supported by pycbc
 
     def __repr__(self, precision: int = 4):
         """Overrides string representation of cls when printed."""
@@ -97,45 +95,96 @@ class ChirpMassAreaModel:
     def coefficients(self):
         return {"a0": self.a0, "b0": self.b0, "b1": self.b1, "m0": self.m0}
 
-    # define distance estimation functions
-    def _estimate_lum_dist(
-        self,
-        eff_distance: Union[float, np.ndarray],
-    ) -> Union[float, np.ndarray]:
-        """Function to estimate luminosity distance from the minimum effective distance.
+    def check_initialised(self, coeff: str, raise_error: bool = True):
+        """Checks for whether a model coefficient is not None."""
+        if getattr(self, coeff, None) is None:
+            msg = f"{type(self).__name__} coefficient {coeff} not initialised."
+            if raise_error:
+                raise ValueError(msg)
+            else:
+                logger.info(msg)
 
-        TODO: Add mathematics and explanation to docstring.
-        """
-        assert self.a0 is not None, f"a0 coefficient is not initialised."
+    def estimate_luminosity_distance(self, eff_distance: float) -> float:
+        self.check_initialised("a0")
         return eff_distance * self.a0
 
-    def _estimate_lum_dist_std(
+    def estimate_luminosity_distance_uncertainty(
         self,
-        eff_distance: Union[float, np.ndarray],
-        snr: Union[float, np.ndarray],
-    ) -> Union[float, np.ndarray]:
-        """Function to estimate standard deviation of luminosity distance.
+        eff_distance: float,
+        snr: float,
+    ) -> float:
+        for coeff in ("a0", "b0", "b1"): self.check_initialised(coeff)
 
-        TODO: Add mathematics and explanation to docstring.
-        """
-        assert self.a0 is not None, f"a0 coefficient is not initialised."
-        assert self.b0 is not None, f"b0 coefficient is not initialised."
-        assert self.b1 is not None, f"b1 coefficient is not initialised."
-
-        lum_dist_std = (
+        return (
             np.power(snr, self.b0)
             + np.exp(self.b1)
-            + self._estimate_lum_dist(eff_distance)
+            + self.estimate_luminosity_distance(eff_distance)
         )
 
-        return lum_dist_std
+    def estimate_distance(eff_distance: float, snr: float) -> Tuple[float, float]:
+        distance = self.estimate_luminosity_distance(eff_distance)
+        distance_std = self.estimate_luminosity_distance_uncertainty(eff_distance, snr)
+        return distance, distance_std
+
+    def estimate_redshift(distance: float, distance_std: float) -> Tuple[float, float]:
+        z = redshift_estimation(distance, distance_std, self.lal_cosmology)
+        return z["central"], z["delta"]
+
+    def calculate_probabilities(
+        mchirp: float,
+        z: float,
+        z_std: float,
+        ) -> Dict[str, float]:
+        """Computes the astrophysical source probability of a given candidate event."""
+
+        # determine chirp mass bounds in detector frame for classification
+        get_redshifted_mchirp = lambda m: (m / (2**0.2)) * (1 + z)  # Mc_det = (1+z)*Mc
+        mchirp_min, mchirp_max = (get_redshifted_mchirp(m) for m in mass_bounds)
+
+        # determine astrophysical source class probabilities given estimated parameters
+        if mchirp > mchirp_max:
+            # if observed detector frame chirp mass is greater than mchirp bounds => BBH
+            probabilities = {"BNS": 0.0, "NSBH": 0.0, "BBH": 1.0}
+
+            if self.mass_gap_max is not None and self.mass_gap_max > self.ns_max:
+                if not separate_mass_gap:
+                    probabilities["MG"] = 0.0
+                else:
+                    probabilities.update({"MGNS": 0.0, "MGMG": 0.0, "BHMG": 0.0})
+
+        elif mchirp < mchirp_min:
+            # if observed detector frame chirp mass is less than mchirp bounds => BNS
+            probabilities = {"BNS": 1.0, "NSBH": 0.0, "BBH": 0.0}
+
+            if self.mass_gap_max is not None and self.mass_gap_max > self.ns_max:
+                if not self.separate_mass_gap:
+                    probabilities["MG"] = 0.0
+                else:
+                    probabilities.update({"MGNS": 0.0, "MGMG": 0.0, "BHMG": 0.0})
+
+        else:
+            # compute probabilities according to proportional areas in chirp mass area
+            areas = calc_areas(
+                mchirp,
+                mchirp * m0,  # m0 is relative uncertasinty in mchirp before redshift
+                z,
+                z_std,
+                self.mass_bounds,
+                self.ns_max,
+                self.mass_gap_max,
+                self.separate_mass_gap,
+            )
+            total_area = sum(areas.values())
+            probabilities = {key: areas[key] / total_area for key in areas}
+
+        return probabilities
 
     def fit(
         self,
-        bayestar_distances: np.ndarray,
-        bayestar_stds: np.ndarray,
-        eff_distances: np.ndarray,
-        snrs: np.ndarray,
+        snr: np.ndarray,
+        eff_distance: np.ndarray,
+        bayestar_distance: np.ndarray,
+        bayestar_std: np.ndarray,
         m0: Optional[float] = None,
     ):
         """Fits a Chirp Mass Area model with equal length arrays for BAYESTAR luminosity
@@ -156,16 +205,16 @@ class ChirpMassAreaModel:
 
         Parameters
         ----------
-        bayestar_distances: np.ndarray
+        snr: np.ndarray
+            An array of trigger SNR values recovered from a search pipeline.
+        eff_distance: np.ndarray
+            An array of trigger effective distances recovered from a search pipeline.
+        bayestar_distance: np.ndarray
             An array of BAYESTAR approximated luminosity distances as returned by the
             ligo.skymap BAYESTAR algorithm.
-        bayestar_stds: np.ndarray
+        bayestar_std: np.ndarray
             An array of BAYESTAR approximated luminosity distance standard deviations
             as returned by the ligo.skymap BAYESTAR algorithm.
-        eff_distances: np.ndarray
-            An array of trigger effective distances recovered from a search pipeline.
-        snrs: np.ndarray
-            An array of trigger SNR values recovered from a search pipeline.
         m0: float | None
             A constant that defines the uncertainty in chirp mass.
         """
@@ -175,23 +224,22 @@ class ChirpMassAreaModel:
             raise ValueError(f"m0 coefficent not initialised - provide a value for m0.")
 
         # a0 taken as mean ratio between lum dist and (minimum) effective distances)
-        self.a0 = float(np.mean(bayestar_distances / eff_distances))
+        self.a0 = float(np.mean(bayestar_distance / eff_distance))
 
         # estimate BAYESTAR luminosity distances
-        bayes_dist_std = bayestar_stds / self._estimate_lum_dist(eff_distances)
+        luminosity_distance = self.estimate_luminosity_distance(eff_distances)
+        norm_bayestar_distance_std = bayestar_distance_std / luminosity_distance
 
         # fit luminosity distance uncertainty as a function of SNR
-        b = Polynomial.fit(np.log(snrs), np.log(bayes_dist_std), 1)
+        b = Polynomial.fit(np.log(snr), np.log(norm_bayestar_distance_std), 1)
         self.b1, self.b0 = b.convert().coef
-        logger.info(f"Fitted coefficients for {self.__repr__}.")
+
         return self
 
     def predict(
-        self,
-        mchirp: float,
+        self,s
         snr: float,
-        eff_dist: float,
-        truncate_lower_dist: Optional[float] = 0.0003,
+        eff_distance: float,
     ) -> Dict[str, float]:
         """
         Computes the different probabilities that a candidate event belongs to each
@@ -206,46 +254,41 @@ class ChirpMassAreaModel:
         eff_distance: float
             The estimated effective distance to the event,
             usually taken as the minimum across all coincident detectors.
-        truncate_lower_dist: float | None
-            If provided, takes the ceiling of truncate_lower_dist and the estimated
-            lower uncertainty bound for distance to prevent negative or unrealistic
-            distance estimates.
 
         Returns
         -------
         dict[str, float]
             The astrophysical source probabilities for each class.
         """
-        assert self.m0 is not None, f"m0 coefficient is not initialised."
-        assert self.a0 is not None, f"a0 coefficient is not initialised."
-        assert self.b0 is not None, f"b0 coefficient is not initialised."
-        assert self.b1 is not None, f"b1 coefficient is not initialised."
 
-        # calc_probabilities does not type check mutable self.config nor coefficients
-        # return predict_source_p_astro(
-        #     self.a0,
-        #     self.b0,
-        #     self.b1,
-        #     self.m0,
-        #     mchirp,
-        #     snr,
-        #     eff_dist,
-        #     self.mass_bounds,  # component mass bounds
-        #     self.ns_max,
-        #     self.mass_gap_max,
-        #     self.separate_mass_gap,
-        #     self.lal_cosmology,
-        #     truncate_lower_dist,
-        # )
+        distance, distance_std = self.estimate_distance(eff_distance)
+        z, z_std = self.estimate_redshift(distance, distance_std, self.lal_cosmology)
+        return self.calculate_probabilities(mchirp, z, z_std)
 
-        
-        z, z_std = predict_redshift(
-            self.a0, self.b0, self.b1,
-            snr, eff_distance, lal_cosmology, truncate_lower_dist
-        )
+    def plot(
+        self,
+        mchirp: float,
+        mchirp_std: float,
+        z: float,
+        z_std: float,
+        ax: Optional[Axes] = None,
+        figsize = Tuple[float, float]
+        *args,
+        **kwargs,
+    ) -> Figure:
+        """Draws the proportional chirp mass area plane according to the model."""
 
-        return calc_probabilities(
-            self.m0, mchirp, z, z_std, mass_bounds, ns_max, mass_gap_max, separate_mass_gap
+        return draw_mchirp_area_plane(
+            ax=ax or plt.gca(),  # use the provided matplotlib axes, else create one
+            mchirp=mchirp,
+            mchirp_std=mchirp_std,
+            z=z,
+            z_std=z_std,
+            self.mass_bounds=self.mass_bounds,
+            self.ns_max=self.ns_max,
+            self.mass_gap_max=self.mass_gap_max,
+            *args,
+            **kwargs,
         )
 
     def save_pkl(self, path: Union[str, Path]):
@@ -256,9 +299,8 @@ class ChirpMassAreaModel:
         with Path(path).open(mode="rb") as f:
             self.__dict__ = pickle.load(f)
 
-        for key in ["a0", "b0", "b1", "m0"]:
-            if getattr(self, key, None) is None:
-                logger.info(f"{type(self).__name__} coefficient {key} not initialised.")
+        for coeff in self.coefficients:
+            self.check_initialised(coeff, raise_error=False)
 
     def save_json(self, path: Union[str, Path], indent: int = 4):
         with Path(path).open(mode="w") as f:
@@ -270,6 +312,160 @@ class ChirpMassAreaModel:
         for key in state:
             setattr(self, key, state[key])
 
-        for key in ["a0", "b0", "b1", "m0"]:
-            if getattr(self, key, None) is None:
-                logger.info(f"{type(self).__name__} coefficient {key} not initialised.")
+        for coeff in self.coefficients:
+            self.check_initialised(coeff, raise_error=False)
+
+
+def draw_mchirp_area_plane(
+    ax: Axes,
+    mchirp: float,
+    mchirp_std: float,
+    z: float,
+    z_std: float,
+    mass_bounds: Tuple[float, float],
+    ns_max: float = 3.0,
+    mass_gap_max: Optional[float] = None,
+    *args,
+    **kwargs
+) -> Axes:
+    """Draws a matplotlib Axes visualising the proportional chirp mass area plane."""
+
+    # estimate source frame chirp mass and uncertainty boundary
+    mc, mc_std = src_mass_from_z_det_mass(mchirp, mchirp_std, z, z_std)
+    mcb = mc + mc_std
+    mcs = mc - mc_std
+
+    # determine component masses (when m1 = m2) given chirp mass boundaries
+    mib = (2.0**0.2) * mcb
+    mis = (2.0**0.2) * mcs
+
+    # get mass boundary limits
+    m2_min, m1_max = mass_bounds
+    mass_gap_max = mass_gap_max or ns_max
+
+    lim_m1b = min(m1_max, mcm1_to_m2(mcb, m2_min))
+    m1b = np.linspace(mib, lim_m1b, num=100)
+    m2b = mcm1_to_m2(mcb, m1b)
+
+    lim_m1s = min(m1_max, mcm1_to_m2(mcs, m2_min))
+    m1s = np.linspace(mis, lim_m1s, num=100)
+    m2s = mcm1_to_m2(mcs, m1s)
+
+    # plot contour
+    if mib > m1_max:
+        ax.plot((m1_max, m1_max), (mcm1_to_m2(mcs, lim_m1s), m1_max), "b")
+    else:
+        ax.plot(m1b, m2b, "b")
+        ax.plot(
+            (m1_max, m1_max), (mcm1_to_m2(mcs, lim_m1s), mcm1_to_m2(mcb, lim_m1b)), "b"
+        )
+    if mis >= m2_min:
+        ax.plot(m1s, m2s, "b")
+        ax.plot((lim_m1s, lim_m1b), (m2_min, m2_min), "b")
+    else:
+        ax.plot((m2_min, lim_m1b), (m2_min, m2_min), "b")
+
+    # plot limits
+    ax.plot((m2_min, m1_max), (m2_min, m1_max), "k--")
+    ax.plot((ns_max, ns_max), (m2_min, ns_max), "k:")
+    ax.plot((mass_gap_max, mass_gap_max), (m2_min, mass_gap_max), "k:")
+    ax.plot((ns_max, m1_max), (ns_max, ns_max), "k:")
+    ax.plot((mass_gap_max, m1_max), (mass_gap_max, mass_gap_max), "k:")
+
+    # colour plot
+    ax.fill_between(
+        np.arange(0.0, ns_max - 0.01, 0.01),
+        mass_gap_max,
+        m1_max,
+        color=get_source_colour("NSBH"),
+        alpha=0.5,
+    )
+    ax.fill_between(
+        np.arange(mass_gap_max, m1_max, 0.01),
+        0.0,
+        ns_max,
+        color=get_source_colour("NSBH"),
+    )
+    ax.fill_between(
+        np.arange(mass_gap_max, m1_max, 0.01),
+        np.arange(mass_gap_max, m1_max, 0.01),
+        m1_max,
+        color=get_source_colour("BBH"),
+        alpha=0.5,
+    )
+    ax.fill_between(
+        np.arange(mass_gap_max, m1_max, 0.01),
+        np.arange(mass_gap_max, m1_max, 0.01),
+        mass_gap_max,
+        color=get_source_colour("BBH"),
+    )
+    ax.fill_between(
+        np.arange(0.0, ns_max, 0.01),
+        0.0,
+        np.arange(0.0, ns_max, 0.01),
+        color=get_source_colour("BNS"),
+    )
+    ax.fill_between(
+        np.arange(0.0, ns_max, 0.01),
+        ns_max,
+        np.arange(0.0, ns_max, 0.01),
+        color=get_source_colour("BNS"),
+        alpha=0.5,
+    )
+
+    if mass_gap_max > ns_max:
+        ax.fill_between(
+            np.arange(0.0, ns_max, 0.01),
+            ns_max,
+            mass_gap_max,
+            color=get_source_colour("MG"),
+            alpha=0.5,
+        )
+        ax.fill_between(
+            np.arange(ns_max, mass_gap_max, 0.01),
+            np.arange(ns_max, mass_gap_max, 0.01),
+            m1_max,
+            color=get_source_colour("MG"),
+            alpha=0.5,
+        )
+        ax.fill_between(
+            np.arange(ns_max, mass_gap_max, 0.01),
+            np.arange(ns_max, mass_gap_max, 0.01),
+            color=get_source_colour("MG"),
+        )
+        ax.fill_between(
+            np.arange(mass_gap_max, m1_max, 0.01),
+            ns_max,
+            mass_gap_max,
+            color=get_source_colour("MG"),
+        )
+
+    # colour contour
+    x1 = np.arange(mis, mib + 0.01, 0.01)
+    x2 = np.arange(mib, lim_m1b, 0.01)
+
+    if len(x1) > 0:
+        ax.fill_between(
+            x1,
+            x1,
+            mcm1_to_m2(mcs, x1),
+            facecolor=(1, 1, 1, 0.5),
+            edgecolor=(0, 0, 0, 0),
+        )
+
+    if len(x2) > 0:
+        # errors if mib >= lim_m1b (x2 is empty)
+        ax.fill_between(
+            x2,
+            mcm1_to_m2(mcb, x2),
+            mcm1_to_m2(mcs, x2),
+            facecolor=(1, 1, 1, 0.5),
+            edgecolor=(0, 0, 0, 0),
+        )
+
+    # plot_details
+    xlims = xlims or mass_bounds
+    ylims = ylims or (1.0, 20.0)
+    ax.set(xlim=xlims, ylim=ylims, xlabel=r"$m_1$", ylabel=r"$m_2$")
+
+    return ax
