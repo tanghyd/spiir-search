@@ -509,5 +509,3 @@ def draw_mass_contour_plane(
     ax.set(xlim=xlims, ylim=ylims, xlabel=r"$m_1$", ylabel=r"$m_2$")
 
     return ax
-
-    xlims
