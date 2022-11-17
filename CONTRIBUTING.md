@@ -1,4 +1,4 @@
-# SPIIR Library Development Guide
+# SPIIR Libraries Development Guide
 
 ## Documentation
 
@@ -41,11 +41,11 @@ script in `.github/workflows/sphinx.yaml` will automatically run `make docs` for
 and move the rendered HTML files from `docs/build/html/` to the root directory of a
 stand-alone branch called `gh-pages` for hosting the documentation.
 
-For more information, see the [Sphinx GitHub Pages Deployment Tutorial][] from Sphinx. -->
+For more information, see the [Sphinx GitHub Pages Deployment Tutorial] from Sphinx. -->
 
-<!-- # References -->
+# References
 
-<!-- [Sphinx GitHub Pages Deployment Tutorial]: https://www.sphinx-doc.org/en/master/tutorial/deploying.html#id5 -->
+<!-- [sphinx github pages deployment tutorial]: https://www.sphinx-doc.org/en/master/tutorial/deploying.html#id5 -->
 
 [example from sphinx]: https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_numpy.html#example-numpy
 [lexical analysis]: https://docs.python.org/3/reference/lexical_analysis.html#encoding-declarations
