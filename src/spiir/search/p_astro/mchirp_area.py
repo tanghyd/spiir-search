@@ -1,9 +1,9 @@
-"""Module for source probability estimation and and plotting for the "mchirp_area" 
-method as proposed by Villa-Ortega et. al. (2020).
+"""Module for source probability estimation and and plotting for the
+"mchirp_area" method as proposed by Villa-Ortega et. al. (2020).
 
 Initial code by A. Curiel Barroso, August 2019
 Modified by V. Villa-Ortega, January 2020, March 2021
-Modified by Daniel Tang for SPIIR March 2022
+Modified by D. Tang for SPIIR March 2022
 
 Code forked from PyCBC for SPIIR development (March 2022)
 Source: https://github.com/gwastro/pycbc/blob/master/pycbc/mchirp_area.py
@@ -15,15 +15,16 @@ import json
 import logging
 import pickle
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
-from matplotlib.figure import Figure
+from numpy.polynomial import Polynomial
 from pycbc.conversions import mass2_from_mchirp_mass1 as mcm1_to_m2
-from pycbc.mchirp_area import (calc_areas, redshift_estimation,
-                               src_mass_from_z_det_mass)
+from pycbc.mchirp_area import calc_areas, redshift_estimation, src_mass_from_z_det_mass
+
+logger = logging.getLogger(__name__)
 
 SOURCE_COLOR_MAP = {
     "BNS": "#A2C8F5",  # light blue
@@ -135,27 +136,28 @@ class ChirpMassAreaModel:
             + self.estimate_luminosity_distance(eff_distance)
         )
 
-    def estimate_distance(eff_distance: float, snr: float) -> Tuple[float, float]:
+    def estimate_distance(self, eff_distance: float, snr: float) -> Tuple[float, float]:
         distance = self.estimate_luminosity_distance(eff_distance)
         distance_std = self.estimate_luminosity_distance_uncertainty(eff_distance, snr)
         return distance, distance_std
 
-    def estimate_redshift(distance: float, distance_std: float) -> Tuple[float, float]:
+    def estimate_redshift(
+        self, distance: float, distance_std: float
+    ) -> Tuple[float, float]:
         z = redshift_estimation(distance, distance_std, self.lal_cosmology)
         return z["central"], z["delta"]
 
     def calculate_probabilities(
+        self,
         mchirp: float,
         z: float,
         z_std: float,
     ) -> Dict[str, float]:
         """Computes the astrophysical source probability of a given candidate event."""
 
-        # determine chirp mass bounds in detector frame for classification
-        get_redshifted_mchirp = lambda m: (m / (2**0.2)) * (
-            1 + z
-        )  # Mc_det = (1+z)*Mc
-        mchirp_min, mchirp_max = (get_redshifted_mchirp(m) for m in mass_bounds)
+        # determine chirp mass bounds in detector frame - mc_det = (1+z)*mc
+        get_redshifted_mchirp = lambda m: (m / (2**0.2)) * (1 + z)
+        mchirp_min, mchirp_max = (get_redshifted_mchirp(m) for m in self.mass_bounds)
 
         # determine astrophysical source class probabilities given estimated parameters
         if mchirp > mchirp_max:
@@ -163,7 +165,7 @@ class ChirpMassAreaModel:
             probabilities = {"BNS": 0.0, "NSBH": 0.0, "BBH": 1.0}
 
             if self.mass_gap_max is not None and self.mass_gap_max > self.ns_max:
-                if not separate_mass_gap:
+                if not self.separate_mass_gap:
                     probabilities["MG"] = 0.0
                 else:
                     probabilities.update({"MGNS": 0.0, "MGMG": 0.0, "BHMG": 0.0})
@@ -182,7 +184,7 @@ class ChirpMassAreaModel:
             # compute probabilities according to proportional areas in chirp mass area
             areas = calc_areas(
                 mchirp,
-                mchirp * m0,  # m0 is relative uncertasinty in mchirp before redshift
+                mchirp * self.m0,  # relative uncertainty in mchirp before redshift
                 z,
                 z_std,
                 self.mass_bounds,
@@ -200,7 +202,7 @@ class ChirpMassAreaModel:
         snr: np.ndarray,
         eff_distance: np.ndarray,
         bayestar_distance: np.ndarray,
-        bayestar_std: np.ndarray,
+        bayestar_distance_std: np.ndarray,
         m0: Optional[float] = None,
     ):
         """Fits a Chirp Mass Area model with equal length arrays for BAYESTAR luminosity
@@ -228,7 +230,7 @@ class ChirpMassAreaModel:
         bayestar_distance: np.ndarray
             An array of BAYESTAR approximated luminosity distances as returned by the
             ligo.skymap BAYESTAR algorithm.
-        bayestar_std: np.ndarray
+        bayestar_distance_std: np.ndarray
             An array of BAYESTAR approximated luminosity distance standard deviations
             as returned by the ligo.skymap BAYESTAR algorithm.
         m0: float | None
@@ -237,13 +239,13 @@ class ChirpMassAreaModel:
         # specify chirp mass uncertainty constant
         self.m0 = m0 or self.m0
         if self.m0 is None and m0 is None:
-            raise ValueError(f"m0 coefficent not initialised - provide a value for m0.")
+            raise ValueError("m0 coefficent not initialised - provide a value for m0.")
 
         # a0 taken as mean ratio between lum dist and (minimum) effective distances)
         self.a0 = float(np.mean(bayestar_distance / eff_distance))
 
         # estimate BAYESTAR luminosity distances
-        luminosity_distance = self.estimate_luminosity_distance(eff_distances)
+        luminosity_distance = self.estimate_luminosity_distance(eff_distance)
         norm_bayestar_distance_std = bayestar_distance_std / luminosity_distance
 
         # fit luminosity distance uncertainty as a function of SNR
@@ -254,6 +256,7 @@ class ChirpMassAreaModel:
 
     def predict(
         self,
+        mchirp: float,
         snr: float,
         eff_distance: float,
     ) -> Dict[str, float]:
@@ -283,21 +286,39 @@ class ChirpMassAreaModel:
 
     def plot(
         self,
-        self,
+        mchirp: float,
         snr: float,
         eff_distance: float,
         ax: Optional[Axes] = None,
-        figsize=Tuple[float, float] * args,
+        *args,
         **kwargs,
     ) -> Axes:
         """Draws the estimated proportional chirp mass area plane with the detector
-        frame trigger data as input to the model."""
+        frame trigger data as input to the model.
+
+        Parameters
+        ----------
+        mchirp: float
+            The source frame chirp mass.
+        snr: float
+            The coincident signal-to-noise ratio (SNR)
+        eff_distance: float
+            The estimated effective distance to the event,
+            usually taken as the minimum across all coincident detectors.
+        ax: Axes, optional
+            The matplotlib Axes object to draw on. If None, one is created.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The mass contour on the chirp mass area plane as a matplotlib Axes.
+        """
         # TODO: Implement a more efficient solution when we want to predict + plot.
 
         # estimate source frame chirp mass from trigger data
         distance, distance_std = self.estimate_distance(eff_distance)
         z, z_std = self.estimate_redshift(distance, distance_std, self.lal_cosmology)
-        m_src, m_src_std = src_mass_from_z_det_mass(mchirp, mchirp_std, z, z_std)
+        m_src, m_src_std = src_mass_from_z_det_mass(mchirp, mchirp * self.m0, z, z_std)
 
         return draw_mass_contour_plane(
             m_src_lower=m_src - m_src_std,

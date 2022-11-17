@@ -10,9 +10,7 @@ from typing import Dict, Union
 
 import numpy as np
 from ligo.p_astro import MarginalizedPosterior, SourceType
-from ligo.p_astro.computation import (choose_snr,
-                                      evaluate_p_astro_from_bayesfac,
-                                      get_f_over_b, p_astro_update)
+from ligo.p_astro.computation import choose_snr, get_f_over_b
 
 from .mchirp_area import ChirpMassAreaModel
 
