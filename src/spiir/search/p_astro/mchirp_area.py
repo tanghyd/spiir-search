@@ -49,7 +49,7 @@ class ChirpMassAreaModel:
         mass_gap_max: Optional[float] = None,
         separate_mass_gap: bool = False,
         lal_cosmology: bool = True,
-        distance_lower_bound: float = 0,
+        distance_lower_bound: float = 1e-4,
     ):
         """Defines a Compact Binary Coalescence source classifier class based on the
         PyCBC Chirp Mass Area method (mchirp_area.py) by Villa-Ortega et. al. (2021).
@@ -109,15 +109,6 @@ class ChirpMassAreaModel:
     def coefficients(self):
         return {"a0": self.a0, "b0": self.b0, "b1": self.b1, "m0": self.m0}
 
-    def check_initialised(self, coeff: str, raise_assert: bool = True):
-        """Checks for whether a model coefficient is not None."""
-        if getattr(self, coeff, None) is None:
-            msg = f"{type(self).__name__} coefficient {coeff} not initialised."
-            if raise_assert:
-                raise
-            else:
-                logger.info(msg)
-
     def estimate_luminosity_distance(self, eff_distance: float) -> float:
         assert self.a0 is not None, "coefficient 'a0' is not initialised"
         return eff_distance * self.a0
@@ -144,6 +135,7 @@ class ChirpMassAreaModel:
     def estimate_redshift(
         self, distance: float, distance_std: float
     ) -> Tuple[float, float]:
+        # FIXME: Add distance_lower_bound for z estimation to fix WARNING
         z = redshift_estimation(distance, distance_std, self.lal_cosmology)
         return z["central"], z["delta"]
 
@@ -183,16 +175,28 @@ class ChirpMassAreaModel:
 
         else:
             # compute probabilities according to proportional areas in chirp mass area
+            mass_gap = True if self.mass_gap_max is not None else False
+            mass_gap_max = self.mass_gap_max or self.ns_max
             areas = calc_areas(
-                mchirp,
-                mchirp * self.m0,  # relative uncertainty in mchirp before redshift
-                z,
-                z_std,
-                self.mass_bounds,
-                self.ns_max,
-                self.mass_gap_max,
-                self.separate_mass_gap,
+                trig_mc_det={"central": mchirp, "delta": mchirp * self.m0},
+                mass_limits=dict(zip(("min_m2", "max_m1"), self.mass_bounds)),
+                mass_bdary={"ns_max": self.ns_max, "gap_max": mass_gap_max},
+                z={"central": z, "delta": z_std},
+                mass_gap=mass_gap,
+                mass_gap_separate=self.separate_mass_gap,
             )
+
+            if not mass_gap and not self.separate_mass_gap:
+                if "MG" in areas:
+                    assert areas["MG"] > 0.0, "Mass Gap (MG) area greater than zero."
+                    del areas["MG"]
+
+            if mass_gap and self.separate_mass_gap:
+                key_map = {"Mass Gap": "MG", "GG": "MGMG", "GNS": "MGNS"}
+                for key in list(areas):
+                    if key in key_map:
+                        areas[key_map[key]] = areas.pop(key)
+
             total_area = sum(areas.values())
             probabilities = {key: areas[key] / total_area for key in areas}
 
@@ -319,7 +323,7 @@ class ChirpMassAreaModel:
         assert self.m0 is not None
         distance, distance_std = self.estimate_distance(eff_distance, snr)
         z, z_std = self.estimate_redshift(distance, distance_std)
-        m_src, m_src_std = src_mass_from_z_det_mass(mchirp, mchirp * self.m0, z, z_std)
+        m_src, m_src_std = src_mass_from_z_det_mass(z, z_std, mchirp, mchirp * self.m0)
 
         return draw_mass_contour_plane(
             ax or plt.gca(),  # use the provided matplotlib axes, else create one
