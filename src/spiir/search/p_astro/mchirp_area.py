@@ -109,17 +109,17 @@ class ChirpMassAreaModel:
     def coefficients(self):
         return {"a0": self.a0, "b0": self.b0, "b1": self.b1, "m0": self.m0}
 
-    def check_initialised(self, coeff: str, raise_error: bool = True):
+    def check_initialised(self, coeff: str, raise_assert: bool = True):
         """Checks for whether a model coefficient is not None."""
         if getattr(self, coeff, None) is None:
             msg = f"{type(self).__name__} coefficient {coeff} not initialised."
-            if raise_error:
-                raise ValueError(msg)
+            if raise_assert:
+                raise
             else:
                 logger.info(msg)
 
     def estimate_luminosity_distance(self, eff_distance: float) -> float:
-        self.check_initialised("a0")
+        assert self.a0 is not None, "coefficient 'a0' is not initialised"
         return eff_distance * self.a0
 
     def estimate_luminosity_distance_uncertainty(
@@ -127,8 +127,8 @@ class ChirpMassAreaModel:
         eff_distance: float,
         snr: float,
     ) -> float:
-        for coeff in ("a0", "b0", "b1"):
-            self.check_initialised(coeff)
+        assert self.b0 is not None, "coefficient 'b0' is not initialised"
+        assert self.b1 is not None, "coefficient 'b1' is not initialised"
 
         return (
             np.power(snr, self.b0)
@@ -154,6 +154,7 @@ class ChirpMassAreaModel:
         z_std: float,
     ) -> Dict[str, float]:
         """Computes the astrophysical source probability of a given candidate event."""
+        assert self.m0 is not None, "coefficient 'm0' is not initialised"
 
         # determine chirp mass bounds in detector frame - mc_det = (1+z)*mc
         get_redshifted_mchirp = lambda m: (m / (2**0.2)) * (1 + z)
@@ -238,8 +239,7 @@ class ChirpMassAreaModel:
         """
         # specify chirp mass uncertainty constant
         self.m0 = m0 or self.m0
-        if self.m0 is None and m0 is None:
-            raise ValueError("m0 coefficent not initialised - provide a value for m0.")
+        assert self.m0 is not None, "coefficient 'm0' is not initialised"
 
         # a0 taken as mean ratio between lum dist and (minimum) effective distances)
         self.a0 = float(np.mean(bayestar_distance / eff_distance))
@@ -280,8 +280,8 @@ class ChirpMassAreaModel:
             The astrophysical source probabilities for each class.
         """
 
-        distance, distance_std = self.estimate_distance(eff_distance)
-        z, z_std = self.estimate_redshift(distance, distance_std, self.lal_cosmology)
+        distance, distance_std = self.estimate_distance(eff_distance, snr)
+        z, z_std = self.estimate_redshift(distance, distance_std)
         return self.calculate_probabilities(mchirp, z, z_std)
 
     def plot(
@@ -316,44 +316,65 @@ class ChirpMassAreaModel:
         # TODO: Implement a more efficient solution when we want to predict + plot.
 
         # estimate source frame chirp mass from trigger data
-        distance, distance_std = self.estimate_distance(eff_distance)
-        z, z_std = self.estimate_redshift(distance, distance_std, self.lal_cosmology)
+        assert self.m0 is not None
+        distance, distance_std = self.estimate_distance(eff_distance, snr)
+        z, z_std = self.estimate_redshift(distance, distance_std)
         m_src, m_src_std = src_mass_from_z_det_mass(mchirp, mchirp * self.m0, z, z_std)
 
         return draw_mass_contour_plane(
-            m_src_lower=m_src - m_src_std,
-            m_src_upper=m_src + m_src_std,
-            mass_bounds=self.mass_bounds,
-            ns_max=self.ns_max,
-            mass_gap_max=self.mass_gap_max,
-            ax=ax or plt.gca(),  # use the provided matplotlib axes, else create one
+            ax or plt.gca(),  # use the provided matplotlib axes, else create one
+            m_src - m_src_std,  # source frame chirp mass lower bound
+            m_src + m_src_std,  # source frame chirp mass upper bound
+            self.mass_bounds,
+            self.ns_max,
+            self.mass_gap_max,
             *args,
             **kwargs,
         )
+
+    def save(self, path: Union[str, Path]):
+        file_path = Path(path)
+        match file_path.suffix:
+            case ".pkl":
+                self.save_pkl(file_path)
+            case ".json":
+                self.save_json(file_path)
+            case _:
+                raise RuntimeError(
+                    f"Save failed - cannot detect file type: {file_path.suffix}. "
+                    "Valid file types are '.pkl' or '.json'."
+                )
+
+    def load(self, path: Union[str, Path]):
+        file_path = Path(path)
+        match file_path.suffix:
+            case ".pkl":
+                self.load_pkl(file_path)
+            case ".json":
+                self.load_json(file_path)
+            case _:
+                raise RuntimeError(
+                    f"Save failed - cannot detect file type: {file_path.suffix}. "
+                    "Valid file types are '.pkl' or '.json'."
+                )
 
     def save_pkl(self, path: Union[str, Path]):
         with Path(path).open(mode="wb") as f:
             pickle.dump(self.__dict__, f)
 
-    def load_pkl(self, path: Union[str, Path]):
-        with Path(path).open(mode="rb") as f:
-            self.__dict__ = pickle.load(f)
-
-        for coeff in self.coefficients:
-            self.check_initialised(coeff, raise_error=False)
-
     def save_json(self, path: Union[str, Path], indent: int = 4):
         with Path(path).open(mode="w") as f:
             json.dump(self.__dict__, f, indent=indent)
+
+    def load_pkl(self, path: Union[str, Path]):
+        with Path(path).open(mode="rb") as f:
+            self.__dict__ = pickle.load(f)
 
     def load_json(self, path: Union[str, Path]):
         with Path(path).open(mode="r") as f:
             state = json.load(f)
         for key in state:
             setattr(self, key, state[key])
-
-        for coeff in self.coefficients:
-            self.check_initialised(coeff, raise_error=False)
 
 
 def draw_mass_contour_plane(
@@ -417,39 +438,39 @@ def draw_mass_contour_plane(
         np.arange(0.0, ns_max - 0.01, 0.01),
         mass_gap_max,
         m1_max,
-        color=SOURCE_COLOR_MAP("NSBH"),
+        color=SOURCE_COLOR_MAP["NSBH"],
         alpha=0.5,
     )
     ax.fill_between(
         np.arange(mass_gap_max, m1_max, 0.01),
         0.0,
         ns_max,
-        color=SOURCE_COLOR_MAP("NSBH"),
+        color=SOURCE_COLOR_MAP["NSBH"],
     )
     ax.fill_between(
         np.arange(mass_gap_max, m1_max, 0.01),
         np.arange(mass_gap_max, m1_max, 0.01),
         m1_max,
-        color=SOURCE_COLOR_MAP("BBH"),
+        color=SOURCE_COLOR_MAP["BBH"],
         alpha=0.5,
     )
     ax.fill_between(
         np.arange(mass_gap_max, m1_max, 0.01),
         np.arange(mass_gap_max, m1_max, 0.01),
         mass_gap_max,
-        color=SOURCE_COLOR_MAP("BBH"),
+        color=SOURCE_COLOR_MAP["BBH"],
     )
     ax.fill_between(
         np.arange(0.0, ns_max, 0.01),
         0.0,
         np.arange(0.0, ns_max, 0.01),
-        color=SOURCE_COLOR_MAP("BNS"),
+        color=SOURCE_COLOR_MAP["BNS"],
     )
     ax.fill_between(
         np.arange(0.0, ns_max, 0.01),
         ns_max,
         np.arange(0.0, ns_max, 0.01),
-        color=SOURCE_COLOR_MAP("BNS"),
+        color=SOURCE_COLOR_MAP["BNS"],
         alpha=0.5,
     )
 
@@ -458,26 +479,26 @@ def draw_mass_contour_plane(
             np.arange(0.0, ns_max, 0.01),
             ns_max,
             mass_gap_max,
-            color=SOURCE_COLOR_MAP("MG"),
+            color=SOURCE_COLOR_MAP["MG"],
             alpha=0.5,
         )
         ax.fill_between(
             np.arange(ns_max, mass_gap_max, 0.01),
             np.arange(ns_max, mass_gap_max, 0.01),
             m1_max,
-            color=SOURCE_COLOR_MAP("MG"),
+            color=SOURCE_COLOR_MAP["MG"],
             alpha=0.5,
         )
         ax.fill_between(
             np.arange(ns_max, mass_gap_max, 0.01),
             np.arange(ns_max, mass_gap_max, 0.01),
-            color=SOURCE_COLOR_MAP("MG"),
+            color=SOURCE_COLOR_MAP["MG"],
         )
         ax.fill_between(
             np.arange(mass_gap_max, m1_max, 0.01),
             ns_max,
             mass_gap_max,
-            color=SOURCE_COLOR_MAP("MG"),
+            color=SOURCE_COLOR_MAP["MG"],
         )
 
     # colour contour

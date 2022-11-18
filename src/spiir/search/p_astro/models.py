@@ -6,11 +6,11 @@ Code sourced from https://git.ligo.org/lscsoft/p-astro/-/tree/master/ligo.
 import logging
 import pickle
 from pathlib import Path
-from typing import Dict, Union
+from typing import Dict, Optional, Union
 
 import numpy as np
 from ligo.p_astro import MarginalizedPosterior, SourceType
-from ligo.p_astro.computation import choose_snr, get_f_over_b
+from ligo.p_astro.computation import get_f_over_b
 
 from .mchirp_area import ChirpMassAreaModel
 
@@ -35,7 +35,7 @@ class TwoComponentModel:
         self.prior_type = prior_type
 
         # mean posterior counts
-        self.mean_counts = None
+        self.mean_counts: Optional[Dict[str, float]] = None
 
     def __repr__(self, precision: int = 4):
         """Overrides string representation of cls when printed."""
@@ -73,15 +73,39 @@ class TwoComponentModel:
 
         return self
 
-    def predict(
-        self, far: Union[float, np.ndarray], snr: Union[float, np.ndarray]
-    ) -> Union[float, np.ndarray]:
+    def predict(self, far: float, snr: float) -> float:
         bayes_factors = get_f_over_b(far, snr, self.far_threshold, self.snr_threshold)
         return self.marginalized_posterior.pastro_update(
             categories=["Astro"],
             bayesfac_dict={"Astro": bayes_factors},
             mean_values_dict=self.mean_counts,
         )
+
+    def save(self, path: Union[str, Path]):
+        file_path = Path(path)
+        match file_path.suffix:
+            case ".pkl":
+                self.save_pkl(file_path)
+            case ".json":
+                raise NotImplementedError("JSON compatibility not yet implemented.")
+            case _:
+                raise RuntimeError(
+                    f"Save failed - cannot detect file type: {file_path.suffix}. "
+                    "Valid file types are '.pkl'."
+                )
+
+    def load(self, path: Union[str, Path]):
+        file_path = Path(path)
+        match file_path.suffix:
+            case ".pkl":
+                self.load_pkl(file_path)
+            case ".json":
+                raise NotImplementedError("JSON compatibility not yet implemented.")
+            case _:
+                raise RuntimeError(
+                    f"Save failed - cannot detect file type: {file_path.suffix}. "
+                    "Valid file types are '.pkl'."
+                )
 
     def save_pkl(self, path: Union[str, Path]):
         with Path(path).open(mode="wb") as f:
