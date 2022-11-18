@@ -1,5 +1,5 @@
 """Module for source probability estimation and and plotting for the
-"mchirp_area" method as proposed by Villa-Ortega et. al. (2020).
+'mchirp_area' method as proposed by Villa-Ortega et. al. (2020).
 
 Initial code by A. Curiel Barroso, August 2019
 Modified by V. Villa-Ortega, January 2020, March 2021
