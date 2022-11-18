@@ -117,11 +117,11 @@ class TwoComponentModel:
 class CompositeModel:
     def __init__(
         self,
-        signal_model: TwoComponentModel,
-        source_model: ChirpMassAreaModel,
+        signal_model: Optional[TwoComponentModel] = None,
+        source_model: Optional[ChirpMassAreaModel] = None,
     ):
-        self.signal_model = signal_model
-        self.source_model = source_model
+        self.signal_model = signal_model or TwoComponentModel()
+        self.source_model = source_model or ChirpMassAreaModel()
 
     def load(
         self,
