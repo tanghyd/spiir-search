@@ -83,29 +83,27 @@ class TwoComponentModel:
 
     def save(self, path: Union[str, Path]):
         file_path = Path(path)
-        match file_path.suffix:
-            case ".pkl":
-                self.save_pkl(file_path)
-            case ".json":
-                raise NotImplementedError("JSON compatibility not yet implemented.")
-            case _:
-                raise RuntimeError(
-                    f"Save failed - cannot detect file type: {file_path.suffix}. "
-                    "Valid file types are '.pkl'."
-                )
+        if file_path.suffix == ".pkl":
+            self.save_pkl(file_path)
+        elif file_path.suffix == ".json":
+            raise NotImplementedError("JSON compatibility not yet implemented.")
+        else:
+            raise RuntimeError(
+                f"Save failed - cannot detect file type: {file_path.suffix}. "
+                "Valid file types are '.pkl'."
+            )
 
     def load(self, path: Union[str, Path]):
         file_path = Path(path)
-        match file_path.suffix:
-            case ".pkl":
-                self.load_pkl(file_path)
-            case ".json":
-                raise NotImplementedError("JSON compatibility not yet implemented.")
-            case _:
-                raise RuntimeError(
-                    f"Save failed - cannot detect file type: {file_path.suffix}. "
-                    "Valid file types are '.pkl'."
-                )
+        if file_path.suffix == ".pkl":
+            self.load_pkl(file_path)
+        elif file_path.suffix == ".json":
+            raise NotImplementedError("JSON compatibility not yet implemented.")
+        else:
+            raise RuntimeError(
+                f"Save failed - cannot detect file type: {file_path.suffix}. "
+                "Valid file types are '.pkl'."
+            )
 
     def save_pkl(self, path: Union[str, Path]):
         with Path(path).open(mode="wb") as f:

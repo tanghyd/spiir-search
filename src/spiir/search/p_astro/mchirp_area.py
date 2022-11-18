@@ -334,29 +334,27 @@ class ChirpMassAreaModel:
 
     def save(self, path: Union[str, Path]):
         file_path = Path(path)
-        match file_path.suffix:
-            case ".pkl":
-                self.save_pkl(file_path)
-            case ".json":
-                self.save_json(file_path)
-            case _:
-                raise RuntimeError(
-                    f"Save failed - cannot detect file type: {file_path.suffix}. "
-                    "Valid file types are '.pkl' or '.json'."
-                )
+        if file_path.suffix == ".pkl":
+            self.save_pkl(file_path)
+        elif file_path.suffix == ".json":
+            self.load_json(file_path)
+        else:
+            raise RuntimeError(
+                f"Save failed - cannot detect file type: {file_path.suffix}. "
+                "Valid file types are '.pkl' or '.json'."
+            )
 
     def load(self, path: Union[str, Path]):
         file_path = Path(path)
-        match file_path.suffix:
-            case ".pkl":
-                self.load_pkl(file_path)
-            case ".json":
-                self.load_json(file_path)
-            case _:
-                raise RuntimeError(
-                    f"Save failed - cannot detect file type: {file_path.suffix}. "
-                    "Valid file types are '.pkl' or '.json'."
-                )
+        if file_path.suffix == ".pkl":
+            self.load_pkl(file_path)
+        elif file_path.suffix == ".json":
+            self.load_json(file_path)
+        else:
+            raise RuntimeError(
+                f"Save failed - cannot detect file type: {file_path.suffix}. "
+                "Valid file types are '.pkl' or '.json'."
+            )
 
     def save_pkl(self, path: Union[str, Path]):
         with Path(path).open(mode="wb") as f:
