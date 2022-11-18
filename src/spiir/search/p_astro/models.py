@@ -35,6 +35,7 @@ class TwoComponentModel:
         self.prior_type = prior_type
 
         # mean posterior counts
+        self.marginalized_posterior: Optional[MarginalizedPosterior] = None
         self.mean_counts: Optional[Dict[str, float]] = None
 
     def __repr__(self, precision: int = 4):
@@ -74,6 +75,7 @@ class TwoComponentModel:
         return self
 
     def predict(self, far: float, snr: float) -> float:
+        assert self.marginalized_posterior is not None, f"Model not fit - call .fit()."
         bayes_factors = get_f_over_b(far, snr, self.far_threshold, self.snr_threshold)
         return self.marginalized_posterior.pastro_update(
             categories=["Astro"],

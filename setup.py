@@ -11,6 +11,7 @@ setup(
         "numpy",
         "matplotlib",
         "pycbc",
+        "scikit-learn>=1.0",
         "p_astro @ git+https://git.ligo.org/lscsoft/p-astro.git@master#egg=p_astro",
     ],
     description="A Python library for SPIIR gravitational wave search algorithms.",
