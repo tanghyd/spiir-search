@@ -75,7 +75,7 @@ class TwoComponentModel:
         return self
 
     def predict(self, far: float, snr: float) -> float:
-        assert self.marginalized_posterior is not None, f"Model not fit - call .fit()."
+        assert self.marginalized_posterior is not None, "Model not fit - call .fit()."
         bayes_factors = get_f_over_b(far, snr, self.far_threshold, self.snr_threshold)
         return self.marginalized_posterior.pastro_update(
             categories=["Astro"],
