@@ -404,7 +404,7 @@ def draw_mass_contour_plane(
         /blob/f2656b4762a232d4758db88569e0b7ab45756ead/mc_area_plots.py
     """
     # determine component masses (when m1 = m2) given chirp mass boundaries
-    mcb, mcs = mchirp_lower, mchirp_upper
+    mcs, mcb = mchirp_lower, mchirp_upper
     mib = (2.0**0.2) * mcb
     mis = (2.0**0.2) * mcs
 
