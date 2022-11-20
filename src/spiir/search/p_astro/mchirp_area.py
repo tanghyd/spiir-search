@@ -51,7 +51,6 @@ class ChirpMassAreaModel:
         mass_gap_max: Optional[float] = None,
         separate_mass_gap: bool = False,
         lal_cosmology: bool = True,
-        distance_lower_bound: float = 1e-4,
     ):
         """Defines a Compact Binary Coalescence source classifier class based on the
         PyCBC Chirp Mass Area method (mchirp_area.py) by Villa-Ortega et. al. (2021).
@@ -78,9 +77,6 @@ class ChirpMassAreaModel:
         lal_cosmology: bool
             If True, it uses the Planck15 cosmology model as defined in
              lalsuite instead of the astropy default.
-        distance_lower_bound: float
-            If provided, the ceiling of the distance_lower_bound and the estimated
-            lower uncertainty bound will be selected for distance estimation.
         """
         # model coefficients
         self.a0, self.b0, self.b1, self.m0 = a0, b0, b1, m0
@@ -93,7 +89,6 @@ class ChirpMassAreaModel:
         assert 0 < ns_max <= (self.mass_gap_max or ns_max)
 
         self.lal_cosmology = lal_cosmology
-        # self.distance_lower_bound = distance_lower_bound  # not supported by pycbc
 
     def __repr__(self, precision: int = 4):
         """Overrides string representation of cls when printed."""
