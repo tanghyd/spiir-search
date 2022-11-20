@@ -14,10 +14,12 @@ https://github.com/veronica-villa/source_probabilities_estimation_pycbclive
 import json
 import logging
 import pickle
+import warnings
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Union
 
 import numpy as np
+from astropy.utils.exceptions import AstropyUserWarning
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from numpy.polynomial import Polynomial
@@ -135,8 +137,10 @@ class ChirpMassAreaModel:
     def estimate_redshift(
         self, distance: float, distance_std: float
     ) -> Tuple[float, float]:
-        # FIXME: Add distance_lower_bound for z estimation to fix WARNING
-        z = redshift_estimation(distance, distance_std, self.lal_cosmology)
+        with warnings.catch_warnings():
+            # hide astropy z_at_value warning when input has negative distance
+            warnings.simplefilter("ignore", category=AstropyUserWarning)
+            z = redshift_estimation(distance, distance_std, self.lal_cosmology)
         return z["central"], z["delta"]
 
     def calculate_probabilities(
@@ -174,9 +178,11 @@ class ChirpMassAreaModel:
                     probabilities.update({"MGNS": 0.0, "MGMG": 0.0, "BHMG": 0.0})
 
         else:
-            # compute probabilities according to proportional areas in chirp mass area
+            # specify mass gap class maximum if provided, else match neutron star
             mass_gap = True if self.mass_gap_max is not None else False
             mass_gap_max = self.mass_gap_max or self.ns_max
+
+            # compute probabilities according to proportional areas in chirp mass area
             areas = calc_areas(
                 trig_mc_det={"central": mchirp, "delta": mchirp * self.m0},
                 mass_limits=dict(zip(("min_m2", "max_m1"), self.mass_bounds)),
