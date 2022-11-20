@@ -6,11 +6,11 @@ Code sourced from https://git.ligo.org/lscsoft/p-astro/-/tree/master/ligo.
 import logging
 import pickle
 from pathlib import Path
-from typing import Dict, Union
+from typing import Dict, Optional, Union
 
 import numpy as np
 from ligo.p_astro import MarginalizedPosterior, SourceType
-from ligo.p_astro.computation import choose_snr, get_f_over_b
+from ligo.p_astro.computation import get_f_over_b
 
 from .mchirp_area import ChirpMassAreaModel
 
@@ -35,7 +35,8 @@ class TwoComponentModel:
         self.prior_type = prior_type
 
         # mean posterior counts
-        self.mean_counts = None
+        self.marginalized_posterior: Optional[MarginalizedPosterior] = None
+        self.mean_counts: Optional[Dict[str, float]] = None
 
     def __repr__(self, precision: int = 4):
         """Overrides string representation of cls when printed."""
@@ -73,15 +74,38 @@ class TwoComponentModel:
 
         return self
 
-    def predict(
-        self, far: Union[float, np.ndarray], snr: Union[float, np.ndarray]
-    ) -> Union[float, np.ndarray]:
+    def predict(self, far: float, snr: float) -> float:
+        assert self.marginalized_posterior is not None, "Model not fit - call .fit()."
         bayes_factors = get_f_over_b(far, snr, self.far_threshold, self.snr_threshold)
         return self.marginalized_posterior.pastro_update(
             categories=["Astro"],
             bayesfac_dict={"Astro": bayes_factors},
             mean_values_dict=self.mean_counts,
         )
+
+    def save(self, path: Union[str, Path]):
+        file_path = Path(path)
+        if file_path.suffix == ".pkl":
+            self.save_pkl(file_path)
+        elif file_path.suffix == ".json":
+            raise NotImplementedError("JSON compatibility not yet implemented.")
+        else:
+            raise RuntimeError(
+                f"Save failed - cannot detect file type: {file_path.suffix}. "
+                "Valid file types are '.pkl'."
+            )
+
+    def load(self, path: Union[str, Path]):
+        file_path = Path(path)
+        if file_path.suffix == ".pkl":
+            self.load_pkl(file_path)
+        elif file_path.suffix == ".json":
+            raise NotImplementedError("JSON compatibility not yet implemented.")
+        else:
+            raise RuntimeError(
+                f"Save failed - cannot detect file type: {file_path.suffix}. "
+                "Valid file types are '.pkl'."
+            )
 
     def save_pkl(self, path: Union[str, Path]):
         with Path(path).open(mode="wb") as f:
@@ -95,11 +119,11 @@ class TwoComponentModel:
 class CompositeModel:
     def __init__(
         self,
-        signal_model: TwoComponentModel,
-        source_model: ChirpMassAreaModel,
+        signal_model: Optional[TwoComponentModel] = None,
+        source_model: Optional[ChirpMassAreaModel] = None,
     ):
-        self.signal_model = signal_model
-        self.source_model = source_model
+        self.signal_model = signal_model or TwoComponentModel()
+        self.source_model = source_model or ChirpMassAreaModel()
 
     def load(
         self,

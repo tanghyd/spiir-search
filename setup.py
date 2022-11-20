@@ -10,7 +10,8 @@ setup(
     install_requires=[
         "numpy",
         "matplotlib",
-        "pycbc",
+        "scikit-learn>=1.0",
+        "pycbc @ git+https://github.com/gwastro/pycbc.git@master#egg=pycbc",
         "p_astro @ git+https://git.ligo.org/lscsoft/p-astro.git@master#egg=p_astro",
     ],
     description="A Python library for SPIIR gravitational wave search algorithms.",
