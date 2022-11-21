@@ -188,9 +188,9 @@ class ChirpMassAreaModel:
             )
 
             if not mass_gap and not self.separate_mass_gap:
-                if "MG" in areas:
-                    assert areas["MG"] > 0.0, "Mass Gap (MG) area greater than zero."
-                    del areas["MG"]
+                if "Mass Gap" in areas:
+                    assert areas["Mass Gap"] > 0.0, "Mass Gap area (MG) greater than 0."
+                    del areas["Mass Gap"]
 
             if mass_gap and self.separate_mass_gap:
                 key_map = {"Mass Gap": "MG", "GG": "MGMG", "GNS": "MGNS"}
