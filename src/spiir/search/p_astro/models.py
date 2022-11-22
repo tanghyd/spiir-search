@@ -23,6 +23,7 @@ class TwoComponentModel:
         far_star: float = 3e-4,
         snr_star: float = 8.5,
         thresholds: Dict[str, Dict[str, float]] = None,
+        far_live_time: Optional[float] = None,
         prior_type: str = "Uniform",
     ):
         # set FAR and SNR thresholds to classify as astro source for bayes factor model
@@ -39,6 +40,7 @@ class TwoComponentModel:
         # mean posterior counts
         self.marginalized_posterior: Optional[MarginalizedPosterior] = None
         self.mean_counts: Optional[Dict[str, float]] = None
+        self.far_live_time = far_live_time  # if not None, set noise counts with this
 
     def __repr__(self, precision: int = 4):
         """Overrides string representation of cls when printed."""
@@ -62,12 +64,16 @@ class TwoComponentModel:
             far_threshold = self.thresholds[parse_ifos(ifos)]["far"]
             snr_threshold = self.thresholds[parse_ifos(ifos)]["snr"]
 
-        far_threshold, snr_threshold = np.array(far_threshold), np.array(snr_threshold)
+        far_thresholdself, snr_threshold = np.array(far_threshold), np.array(
+            snr_threshold
+        )
         is_beyond_threshold = (snr > snr_threshold) & (far < far_threshold)
         capped_snr = np.where(is_beyond_threshold, snr_threshold, snr)
         return capped_snr if isinstance(snr, Iterable) else capped_snr.item()
 
-    def fit(self, far: np.ndarray, snr: np.ndarray):
+    def fit(
+        self, far: np.ndarray, snr: np.ndarray, far_live_time: Optional[float] = None
+    ):
         # approximate bayes factor
         bayes_factors = get_f_over_b(far, snr, self.far_star, self.snr_star)
         assert len(bayes_factors.shape) == 1, "bayes_factors should be a 1-dim array."
@@ -87,6 +93,10 @@ class TwoComponentModel:
             key: self.marginalized_posterior.getOneDimMean(category=key)
             for key in ("Astro", "Terr")
         }
+
+        far_live_time = far_live_time or self.far_live_time
+        if far_live_time is not None:
+            self.mean_counts["Terr"] = self.far_star * far_live_time
 
         return self
 
