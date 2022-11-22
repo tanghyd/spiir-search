@@ -129,7 +129,7 @@ class TwoComponentModel:
 
         # Ensure SNR does not increase indefinitely beyond limiting FAR
         if self.thresholds is not None and ifos is not None:
-            snr = self.get_capped_snr(far, snr, ifos)
+            snr = self.bound_snr(far, snr, ifos)
 
         # compute bayes factor for foreground vs background trigger distribution
         bayes_factors = get_f_over_b(far, snr, self.far_star, self.snr_star)
