@@ -55,7 +55,27 @@ class TwoComponentModel:
         else:
             return f"{type(self).__name__}()"
 
-    def get_capped_snr(self, far: float, snr: float, ifos: Iterable[str]) -> float:
+    def bound_snr(self, far: float, snr: float, ifos: Iterable[str]) -> float:
+        """Return an SNR that does not exceed the SNR threshold for FARs below a
+        given FAR threshold for each interferometer combination.
+
+        THis function is based on the choose_snr function from ligo.p_astro.computation.
+
+        Parameters
+        ----------
+        far: float
+            The false alarm rate (FAR) of the event
+        snr: float
+            The signal to noise ratio (SNR) of the event.
+        ifos : Iterable[str]
+            The set of interferometers that detected the event.
+
+        Returns
+        -------
+        float
+            The maximum between the observed SNR value and the SNR threshold.
+        """
+
         parse_ifos = lambda key: key if isinstance(key, str) else ",".join(key)
         if isinstance(snr, Iterable):
             far_threshold = [self.thresholds[parse_ifos(key)]["far"] for key in ifos]
@@ -64,12 +84,11 @@ class TwoComponentModel:
             far_threshold = self.thresholds[parse_ifos(ifos)]["far"]
             snr_threshold = self.thresholds[parse_ifos(ifos)]["snr"]
 
-        far_thresholdself, snr_threshold = np.array(far_threshold), np.array(
-            snr_threshold
-        )
+        far_threshold = np.array(far_threshold)
+        snr_threshold = np.array(snr_threshold)
         is_beyond_threshold = (snr > snr_threshold) & (far < far_threshold)
-        capped_snr = np.where(is_beyond_threshold, snr_threshold, snr)
-        return capped_snr if isinstance(snr, Iterable) else capped_snr.item()
+        bounded_snr = np.where(is_beyond_threshold, snr_threshold, snr)
+        return bounded_snr if isinstance(snr, Iterable) else bounded_snr.item()
 
     def fit(
         self, far: np.ndarray, snr: np.ndarray, far_live_time: Optional[float] = None
