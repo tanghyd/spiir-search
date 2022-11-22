@@ -14,6 +14,7 @@ setup(
         "pycbc @ git+https://github.com/gwastro/pycbc.git@master#egg=pycbc",
         "p_astro @ git+https://git.ligo.org/lscsoft/p-astro.git@master#egg=p_astro",
     ],
+    include_package_data=True,
     description="A Python library for SPIIR gravitational wave search algorithms.",
     author="Daniel Tang",
     author_email="daniel.tang@uwa.edu.au",

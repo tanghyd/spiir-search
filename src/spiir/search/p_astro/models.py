@@ -6,7 +6,7 @@ Code sourced from https://git.ligo.org/lscsoft/p-astro/-/tree/master/ligo.
 import logging
 import pickle
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Dict, Iterable, Optional, Union
 
 import numpy as np
 from ligo.p_astro import MarginalizedPosterior, SourceType
@@ -20,13 +20,15 @@ logger = logging.getLogger(__name__)
 class TwoComponentModel:
     def __init__(
         self,
-        far_threshold: float = 3e-4,
-        snr_threshold: float = 8.5,
+        far_star: float = 3e-4,
+        snr_star: float = 8.5,
+        thresholds: Dict[str, Dict[str, float]] = None,
         prior_type: str = "Uniform",
     ):
         # set FAR and SNR thresholds to classify as astro source for bayes factor model
-        self.far_threshold = far_threshold
-        self.snr_threshold = snr_threshold
+        self.far_star = far_star
+        self.snr_star = snr_star
+        self.thresholds = thresholds
 
         # assign prior distribution type to counts
         valid_prior_types = ("Uniform", "Jeffreys")
@@ -51,9 +53,23 @@ class TwoComponentModel:
         else:
             return f"{type(self).__name__}()"
 
+    def get_capped_snr(self, far: float, snr: float, ifos: Iterable[str]) -> float:
+        parse_ifos = lambda key: key if isinstance(key, str) else ",".join(key)
+        if isinstance(snr, Iterable):
+            far_threshold = [self.thresholds[parse_ifos(key)]["far"] for key in ifos]
+            snr_threshold = [self.thresholds[parse_ifos(key)]["snr"] for key in ifos]
+        else:
+            far_threshold = self.thresholds[parse_ifos(ifos)]["far"]
+            snr_threshold = self.thresholds[parse_ifos(ifos)]["snr"]
+
+        far_threshold, snr_threshold = np.array(far_threshold), np.array(snr_threshold)
+        is_beyond_threshold = (snr > snr_threshold) & (far < far_threshold)
+        capped_snr = np.where(is_beyond_threshold, snr_threshold, snr)
+        return capped_snr if isinstance(snr, Iterable) else capped_snr.item()
+
     def fit(self, far: np.ndarray, snr: np.ndarray):
         # approximate bayes factor
-        bayes_factors = get_f_over_b(far, snr, self.far_threshold, self.snr_threshold)
+        bayes_factors = get_f_over_b(far, snr, self.far_star, self.snr_star)
         assert len(bayes_factors.shape) == 1, "bayes_factors should be a 1-dim array."
 
         # construct two component posterior for signal vs. noise
@@ -74,9 +90,22 @@ class TwoComponentModel:
 
         return self
 
-    def predict(self, far: float, snr: float) -> float:
+    def predict(
+        self,
+        far: float,
+        snr: float,
+        ifos: Optional[Iterable[str]] = None,
+    ) -> float:
         assert self.marginalized_posterior is not None, "Model not fit - call .fit()."
-        bayes_factors = get_f_over_b(far, snr, self.far_threshold, self.snr_threshold)
+
+        # Ensure SNR does not increase indefinitely beyond limiting FAR
+        if self.thresholds is not None and ifos is not None:
+            snr = self.get_capped_snr(far, snr, ifos)
+
+        # compute bayes factor for foreground vs background trigger distribution
+        bayes_factors = get_f_over_b(far, snr, self.far_star, self.snr_star)
+
+        # return p_astro calculation for the given trigger
         return self.marginalized_posterior.pastro_update(
             categories=["Astro"],
             bayesfac_dict={"Astro": bayes_factors},
@@ -139,8 +168,9 @@ class CompositeModel:
         snr: float,
         mchirp: float,
         eff_dist: float,
+        ifos: Optional[Iterable[str]] = None,
     ) -> Dict[str, float]:
-        astro_prob = self.signal_model.predict(far, snr)
+        astro_prob = self.signal_model.predict(far, snr, ifos)
         source_probs = self.source_model.predict(mchirp, snr, eff_dist)
         probs = {key: source_probs[key] * astro_prob for key in source_probs}
         probs.update({"Terrestrial": 1 - astro_prob})
