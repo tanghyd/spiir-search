@@ -187,12 +187,8 @@ class ChirpMassAreaModel:
                 mass_gap_separate=self.separate_mass_gap,
             )
 
-            if not mass_gap and not self.separate_mass_gap:
-                if "Mass Gap" in areas:
-                    assert areas["Mass Gap"] > 0.0, "Mass Gap area (MG) greater than 0."
-                    del areas["Mass Gap"]
-
-            if mass_gap and self.separate_mass_gap:
+            # rename keys output by calc_areas if component mass gaps are computed
+            if mass_gap:
                 key_map = {"Mass Gap": "MG", "GG": "MGMG", "GNS": "MGNS"}
                 for key in list(areas):
                     if key in key_map:
