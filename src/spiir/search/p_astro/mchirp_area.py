@@ -194,6 +194,7 @@ class ChirpMassAreaModel:
                     if key in key_map:
                         areas[key_map[key]] = areas.pop(key)
 
+            # normalize mass contour area to get probability estimates
             total_area = sum(areas.values())
             probabilities = {key: areas[key] / total_area for key in areas}
 
