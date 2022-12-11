@@ -102,7 +102,7 @@ class BayesFactorModel:
             norm = self.autocorr_norm[idx, bankid, tmplt_idx]
             sum_sq = self.autocorr_sum_sq[idx, bankid, tmplt_idx]
         else:
-            # TODO: test logic for network snr case (takes average across all IFOs?)
+            # TODO: test logic for network snr case (consider weighting ifo by SNR?)
             norm = self.autocorr_norm[:, bankid, tmplt_idx].mean()
             sum_sq = self.autocorr_sum_sq[:, bankid, tmplt_idx].mean()
 
