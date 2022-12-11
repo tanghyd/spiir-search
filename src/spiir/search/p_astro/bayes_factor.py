@@ -108,12 +108,13 @@ class BayesFactorModel:
 
         signal = compute_log_odds(snr, chisq, norm, sum_sq, self.beta_signal)
         noise = compute_log_odds(snr, chisq, norm, sum_sq, self.beta_noise)
-        log_bayes_factor = signal - noise + np.power(snr, 2) / 2
+        log_bf = signal - noise + np.power(snr, 2) / 2
         if log:
-            return log_bayes_factor
+            return log_bf
         else:
             # truncate extreme log bayes factor to avoid inf/-inf values
-            if log_bayes_factor >= 0:
-                return np.exp(np.min((self.THRESH_LBF, log_bayes_factor)))
+            if log_bf >= 0:
+                log_bf = np.where(log_bf < self.LBF_THRESH, log_bf, self.THRESH_LBF)
             else:
-                return np.exp(np.max((-self.THRESH_LBF, log_bayes_factor)))
+                log_bf = np.where(log_bf > -self.LBF_THRESH, log_bf, -self.THRESH_LBF)
+            return np.exp(log_bf)
