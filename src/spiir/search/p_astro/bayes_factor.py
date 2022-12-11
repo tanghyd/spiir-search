@@ -41,7 +41,7 @@ def compute_log_odds(
 class BayesFactorModel:
     """New ranking statistic model using log bayes factor by Victor Oloworaran et al."""
 
-    THRESH_LBF = 200.0
+    LOG_BF_THRESHOLD = 200.0
 
     def __init__(
         self,
@@ -113,8 +113,17 @@ class BayesFactorModel:
             return log_bf
         else:
             # truncate extreme log bayes factor to avoid inf/-inf values
-            if log_bf >= 0:
-                log_bf = np.where(log_bf < self.LBF_THRESH, log_bf, self.THRESH_LBF)
-            else:
-                log_bf = np.where(log_bf > -self.LBF_THRESH, log_bf, -self.THRESH_LBF)
+            signal_idxs, noise_idxs = np.where(log_bf > 1), np.where(log_bf < 1)
+            log_bf[signal_idxs] = np.where(
+                log_bf[signal_idxs] < self.LOG_BF_THRESHOLD,
+                log_bf[signal_idxs],
+                self.LOG_BF_THRESHOLD,
+            )
+
+            log_bf[noise_idxs] = np.where(
+                log_bf[noise_idxs] > -self.LOG_BF_THRESHOLD,
+                log_bf[noise_idxs],
+                -self.LOG_BF_THRESHOLD,
+            )
+
             return np.exp(log_bf)
