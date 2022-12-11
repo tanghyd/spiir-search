@@ -113,17 +113,6 @@ class BayesFactorModel:
             return log_bf
         else:
             # truncate extreme log bayes factor to avoid inf/-inf values
-            signal_idxs, noise_idxs = np.where(log_bf > 1), np.where(log_bf < 1)
-            log_bf[signal_idxs] = np.where(
-                log_bf[signal_idxs] < self.LOG_BF_THRESHOLD,
-                log_bf[signal_idxs],
-                self.LOG_BF_THRESHOLD,
-            )
-
-            log_bf[noise_idxs] = np.where(
-                log_bf[noise_idxs] > -self.LOG_BF_THRESHOLD,
-                log_bf[noise_idxs],
-                -self.LOG_BF_THRESHOLD,
-            )
-
+            log_bf[np.where(log_bf > self.LOG_BF_THRESHOLD)] = self.LOG_BF_THRESHOLD
+            log_bf[np.where(log_bf < -self.LOG_BF_THRESHOLD)] = -self.LOG_BF_THRESHOLD
             return np.exp(log_bf)
